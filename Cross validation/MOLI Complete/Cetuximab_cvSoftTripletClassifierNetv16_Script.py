@@ -14,6 +14,13 @@ import seaborn as sns
 from sklearn import metrics
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import train_test_split
+from sklearn.utils.multiclass import type_of_target
+from sklearn.preprocessing import LabelEncoder
+
+root_dir='/data/research/MOLI/'
+import os, sys
+sys.path.insert(0,root_dir)
+
 from utils import AllTripletSelector,HardestNegativeTripletSelector, RandomNegativeTripletSelector, SemihardNegativeTripletSelector # Strategies for selecting triplets within a minibatch
 from metrics import AverageNonzeroTripletsMetric
 from torch.utils.data.sampler import WeightedRandomSampler
@@ -23,45 +30,66 @@ import random
 from random import randint
 from sklearn.model_selection import StratifiedKFold
 
-save_results_to = '/home/hnoghabi/SoftClassifierTripNetv16/Cetuximab/'
+# save_results_to = '/home/hnoghabi/SoftClassifierTripNetv16/Cetuximab/'
+save_results_to = os.path.join(root_dir,'results/SoftClassifierTripNetv16/Cetuximab/')
+if not os.path.exists(save_results_to):
+    os.makedirs(save_results_to)
 torch.manual_seed(42)
 
 max_iter = 100
 
-GDSCE = pd.read_csv("GDSC_exprs.Cetuximab.eb_with.PDX_exprs.Cetuximab.tsv", 
+# ---------------------------------------------------------
+# load data
+# ---------------------------------------------------------
+"""
+# input cell line / tumor sample features
+C: CNA (Copy Number Aberration)
+E: expression
+M: mutation
+
+# output
+R: response
+"""
+
+# GDSC data for training
+GDSCE = pd.read_csv(os.path.join(root_dir,'data/exprs_homogenized/')+"GDSC_exprs.Cetuximab.eb_with.PDX_exprs.Cetuximab.tsv", 
                     sep = "\t", index_col=0, decimal = ",")
 GDSCE = pd.DataFrame.transpose(GDSCE)
 
-GDSCR = pd.read_csv("GDSC_response.Cetuximab.tsv", 
-                    sep = "\t", index_col=0, decimal = ",")
-
-PDXE = pd.read_csv("PDX_exprs.Cetuximab.eb_with.GDSC_exprs.Cetuximab.tsv", 
-                   sep = "\t", index_col=0, decimal = ",")
-PDXE = pd.DataFrame.transpose(PDXE)
-
-PDXM = pd.read_csv("PDX_mutations.Cetuximab.tsv", 
-                   sep = "\t", index_col=0, decimal = ".")
-PDXM = pd.DataFrame.transpose(PDXM)
-
-PDXC = pd.read_csv("PDX_CNA.Cetuximab.tsv", 
-                   sep = "\t", index_col=0, decimal = ".")
-PDXC.drop_duplicates(keep='last')
-PDXC = pd.DataFrame.transpose(PDXC)
-
-GDSCM = pd.read_csv("GDSC_mutations.Cetuximab.tsv", 
+GDSCM = pd.read_csv(os.path.join(root_dir+'data/SNA_binary/')+"GDSC_mutations.Cetuximab.tsv", 
                     sep = "\t", index_col=0, decimal = ".")
 GDSCM = pd.DataFrame.transpose(GDSCM)
 
-
-GDSCC = pd.read_csv("GDSC_CNA.Cetuximab.tsv", 
+GDSCC = pd.read_csv(os.path.join(root_dir+'data/CNA/')+"GDSC_CNA.Cetuximab.tsv", 
                     sep = "\t", index_col=0, decimal = ".")
 GDSCC.drop_duplicates(keep='last')
 GDSCC = pd.DataFrame.transpose(GDSCC)
 
+GDSCR = pd.read_csv(os.path.join(root_dir,'data/response/')+"GDSC_response.Cetuximab.tsv", 
+                    sep = "\t", index_col=0, decimal = ",")
+
+# PDX data for testing
+PDXE = pd.read_csv(os.path.join(root_dir+'data/exprs_homogenized/')+"PDX_exprs.Cetuximab.eb_with.GDSC_exprs.Cetuximab.tsv", 
+                   sep = "\t", index_col=0, decimal = ",")
+PDXE = pd.DataFrame.transpose(PDXE)
+
+PDXM = pd.read_csv(os.path.join(root_dir+'data/SNA_binary/')+"PDX_mutations.Cetuximab.tsv", 
+                   sep = "\t", index_col=0, decimal = ".")
+PDXM = pd.DataFrame.transpose(PDXM)
+
+PDXC = pd.read_csv(os.path.join(root_dir+'data/CNA/')+"PDX_CNA.Cetuximab.tsv", 
+                   sep = "\t", index_col=0, decimal = ".")
+PDXC.drop_duplicates(keep='last')
+PDXC = pd.DataFrame.transpose(PDXC)
+
+# ---------------------------------------------------------
+# preprocess data, use overlapping samples and genes (columns)
+# ---------------------------------------------------------
 selector = VarianceThreshold(0.05)
 selector.fit_transform(GDSCE)
 GDSCE = GDSCE[GDSCE.columns[selector.get_support(indices=True)]]
 
+# convert CNA and mutation to binary values
 PDXC = PDXC.fillna(0)
 PDXC[PDXC != 0.0] = 1
 PDXM = PDXM.fillna(0)
@@ -89,24 +117,34 @@ GDSCE = GDSCE.loc[ls2,ls]
 GDSCM = GDSCM.loc[ls2,ls]
 GDSCC = GDSCC.loc[ls2,ls]
 
+# PDX data: (60, 13348), 60 samples, 13348 genes
+# GDSC data: (856, 13348), 856 samples, 13348 genes
+
 GDSCR.loc[GDSCR.iloc[:,0] == 'R'] = 0
 GDSCR.loc[GDSCR.iloc[:,0] == 'S'] = 1
+GDSCR.index = GDSCR.index.astype(str)
+GDSCR = GDSCR[['response']]
 GDSCR.columns = ['targets']
 GDSCR = GDSCR.loc[ls2,:]
 
-ls_mb_size = [14, 30, 64]
-ls_h_dim = [1024, 512, 256, 128, 64]
-ls_marg = [0.5, 1, 1.5, 2, 2.5]
-ls_lr = [0.0005, 0.0001, 0.005, 0.001]
-ls_epoch = [20, 50, 10, 15, 30, 40, 60, 70, 80, 90, 100]
-ls_rate = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
-ls_wd = [0.01, 0.001, 0.1, 0.0001]
-ls_lam = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+# hyperparameters
+ls_mb_size = [14, 30, 64] # batch size
+ls_h_dim = [1024, 512, 256, 128, 64] 
+ls_marg = [0.5, 1, 1.5, 2, 2.5] # margin
+ls_lr = [0.0005, 0.0001, 0.005, 0.001] # learning rate
+ls_epoch = [20, 50, 10, 15, 30, 40, 60, 70, 80, 90, 100] # epoch
+ls_rate = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8] # dropout rate
+ls_wd = [0.01, 0.001, 0.1, 0.0001] # weight decay
+ls_lam = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6] # weight for triplet loss
 
 Y = GDSCR['targets'].values
 
-skf = StratifiedKFold(n_splits=5, random_state=42)
+# ---------------------------------------------------------
+# training and testing
+# ---------------------------------------------------------
+skf = StratifiedKFold(n_splits=5, random_state=42) # train 0.8, test 0.2
 
+max_iter = 1
 for iters in range(max_iter):
     k = 0
     mbs = 30
@@ -126,18 +164,45 @@ for iters in range(max_iter):
     wd = random.choice(ls_wd)   
     lam = random.choice(ls_lam)   
 
-    for train_index, test_index in skf.split(GDSCE.values, Y):
+    if max_iter==1: # test the selected hyperparameters as in Supplementary Table 3
+        # Methods for Cetuximab, MOLI_Complete
+        mbs = 30
+        hdm1 = 256
+        hdm2 = 512
+        hdm3 = 128
+        mrg = 2
+        lre = 0.0001
+        lrm = 0.0005
+        lrc = 0.0005
+        lrCL = 0.0005
+        epch = 10
+        rate1 = 0.3
+        rate2 = 0.8
+        rate3 = 0.8
+        rate4 = 0.4
+        wd = 0.01
+        lam = 0.2
+
+    # print(type_of_target(Y))
+    label_encoder = LabelEncoder()
+    Y = label_encoder.fit_transform(Y)
+    # print(type_of_target(Y))
+
+    for (train_index, test_index) in skf.split(GDSCE.values, Y):
+        # print((train_index, test_index))
+        # train 685 samples, test 171 samples
         k = k + 1
         X_trainE = GDSCE.values[train_index,:]
         X_testE =  GDSCE.values[test_index,:]
         X_trainM = GDSCM.values[train_index,:]
         X_testM = GDSCM.values[test_index,:]
         X_trainC = GDSCC.values[train_index,:]
-        X_testC = GDSCM.values[test_index,:]
+        # X_testC = GDSCM.values[test_index,:]
+        X_testC = GDSCC.values[test_index,:]
         y_trainE = Y[train_index]
         y_testE = Y[test_index]
         
-        scalerGDSC = sk.StandardScaler()
+        scalerGDSC = sk.StandardScaler() # zero-mean normalization
         scalerGDSC.fit(X_trainE)
         X_trainE = scalerGDSC.transform(X_trainE)
         X_testE = scalerGDSC.transform(X_testE)
@@ -213,12 +278,12 @@ for iters in range(max_iter):
                 output = self.EnM(x)
                 return output    
 
-
         class AEC(nn.Module):
             def __init__(self):
                 super(AEC, self).__init__()
                 self.EnC = torch.nn.Sequential(
-                    nn.Linear(IM_dim, h_dim3),
+                    # nn.Linear(IM_dim, h_dim3),
+                    nn.Linear(IC_dim, h_dim3),
                     nn.BatchNorm1d(h_dim3),
                     nn.ReLU(),
                     nn.Dropout(rate3))
@@ -368,3 +433,5 @@ for iters in range(max_iter):
         plt.suptitle(title)
         plt.savefig(save_results_to + title + '.png', dpi = 150)
         plt.close()
+
+        print('AUC:', aucts)

@@ -14,6 +14,11 @@ import seaborn as sns
 from sklearn import metrics
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import train_test_split
+
+root_dir='/data/research/MOLI/'
+import os, sys
+sys.path.insert(0,root_dir)
+
 from utils import AllTripletSelector,HardestNegativeTripletSelector, RandomNegativeTripletSelector, SemihardNegativeTripletSelector # Strategies for selecting triplets within a minibatch
 from metrics import AverageNonzeroTripletsMetric
 from torch.utils.data.sampler import WeightedRandomSampler
@@ -23,36 +28,39 @@ import random
 from random import randint
 from sklearn.model_selection import StratifiedKFold
 
-save_results_to = '/home/hnoghabi/SoftClassifierTripNetv15.1/GemcitabineTCGA/'
+# save_results_to = '/home/hnoghabi/SoftClassifierTripNetv15.1/GemcitabineTCGA/'
+save_results_to = os.path.join(root_dir,'results/SoftClassifierTripNetv15.1/GemcitabineTCGA/')
+if not os.path.exists(save_results_to):
+    os.makedirs(save_results_to)
 seed = 42
 torch.manual_seed(seed)
 
 max_iter = 50
 
-GDSCE = pd.read_csv("GDSC_exprs.Gemcitabine.eb_with.TCGA_exprs.Gemcitabine.tsv", 
+GDSCE = pd.read_csv(os.path.join(root_dir,'data/expr_homogenized/')+"GDSC_exprs.Gemcitabine.eb_with.TCGA_exprs.Gemcitabine.tsv", 
                     sep = "\t", index_col=0, decimal = ",")
 GDSCE = pd.DataFrame.transpose(GDSCE)
 
-TCGAE = pd.read_csv("TCGA_exprs.Gemcitabine.eb_with.GDSC_exprs.Gemcitabine.tsv", 
+TCGAE = pd.read_csv(os.path.join(root_dir,'data/expr_homogenized/')+"TCGA_exprs.Gemcitabine.eb_with.GDSC_exprs.Gemcitabine.tsv", 
                    sep = "\t", index_col=0, decimal = ",")
 TCGAE = pd.DataFrame.transpose(TCGAE)
 
-TCGAM = pd.read_csv("TCGA_mutations.Gemcitabine.tsv", 
+TCGAM = pd.read_csv(os.path.join(root_dir,'data/SNA_binary/')+"TCGA_mutations.Gemcitabine.tsv", 
                    sep = "\t", index_col=0, decimal = ".")
 TCGAM = pd.DataFrame.transpose(TCGAM)
 TCGAM = TCGAM.loc[:,~TCGAM.columns.duplicated()]
 
-TCGAC = pd.read_csv("TCGA_CNA.Gemcitabine.tsv", 
+TCGAC = pd.read_csv(os.path.join(root_dir,'data/CNA/')+"TCGA_CNA.Gemcitabine.tsv", 
                    sep = "\t", index_col=0, decimal = ".")
 TCGAC = pd.DataFrame.transpose(TCGAC)
 TCGAC = TCGAC.loc[:,~TCGAC.columns.duplicated()]
 
-GDSCM = pd.read_csv("GDSC_mutations.Gemcitabine.tsv", 
+GDSCM = pd.read_csv(os.path.join(root_dir,'data/SNA_binary/')+"GDSC_mutations.Gemcitabine.tsv", 
                     sep = "\t", index_col=0, decimal = ".")
 GDSCM = pd.DataFrame.transpose(GDSCM)
 GDSCM = GDSCM.loc[:,~GDSCM.columns.duplicated()]
 
-GDSCC = pd.read_csv("GDSC_CNA.Gemcitabine.tsv", 
+GDSCC = pd.read_csv(os.path.join(root_dir,'data/CNA/')+"GDSC_CNA.Gemcitabine.tsv", 
                     sep = "\t", index_col=0, decimal = ".")
 GDSCC.drop_duplicates(keep='last')
 GDSCC = pd.DataFrame.transpose(GDSCC)
@@ -89,9 +97,9 @@ GDSCE = GDSCE.loc[ls2,ls]
 GDSCM = GDSCM.loc[ls2,ls]
 GDSCC = GDSCC.loc[ls2,ls]
 
-GDSCR = pd.read_csv("GDSC_response.Gemcitabine.tsv", 
+GDSCR = pd.read_csv(os.path.join(root_dir,'data/response/')+"GDSC_response.Gemcitabine.tsv", 
                     sep = "\t", index_col=0, decimal = ",")
-TCGAR = pd.read_csv("TCGA_response.Gemcitabine.tsv", 
+TCGAR = pd.read_csv(os.path.join(root_dir,'data/response/')+"TCGA_response.Gemcitabine.tsv", 
                        sep = "\t", index_col=0, decimal = ",")
 
 GDSCR.rename(mapper = str, axis = 'index', inplace = True)
@@ -147,7 +155,8 @@ for iters in range(max_iter):
         X_trainM = GDSCM.values[train_index,:]
         X_testM = GDSCM.values[test_index,:]
         X_trainC = GDSCC.values[train_index,:]
-        X_testC = GDSCM.values[test_index,:]
+        # X_testC = GDSCM.values[test_index,:]
+        X_testC = GDSCC.values[test_index,:]
         y_trainE = Y[train_index]
         y_testE = Y[test_index]
         
@@ -232,7 +241,8 @@ for iters in range(max_iter):
             def __init__(self):
                 super(AEC, self).__init__()
                 self.EnC = torch.nn.Sequential(
-                    nn.Linear(IM_dim, h_dim3),
+                    # nn.Linear(IM_dim, h_dim3),
+                    nn.Linear(IC_dim, h_dim3),
                     nn.BatchNorm1d(h_dim3),
                     nn.ReLU(),
                     nn.Dropout(rate3))
@@ -382,3 +392,5 @@ for iters in range(max_iter):
         plt.suptitle(title)
         plt.savefig(save_results_to + title + '.png', dpi = 150)
         plt.close()
+
+        print('AUC:', aucts)

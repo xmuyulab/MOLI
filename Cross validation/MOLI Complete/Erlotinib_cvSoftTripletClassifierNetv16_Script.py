@@ -14,6 +14,11 @@ import seaborn as sns
 from sklearn import metrics
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import train_test_split
+
+root_dir='/data/research/MOLI/'
+import os, sys
+sys.path.insert(0,root_dir)
+
 from utils import AllTripletSelector,HardestNegativeTripletSelector, RandomNegativeTripletSelector, SemihardNegativeTripletSelector # Strategies for selecting triplets within a minibatch
 from metrics import AverageNonzeroTripletsMetric
 from torch.utils.data.sampler import WeightedRandomSampler
@@ -23,38 +28,41 @@ import random
 from random import randint
 from sklearn.model_selection import StratifiedKFold
 
-save_results_to = '/home/hnoghabi/SoftClassifierTripNetv16/Erlotinib/'
+# save_results_to = '/home/hnoghabi/SoftClassifierTripNetv16/Erlotinib/'
+save_results_to = os.path.join(root_dir,'results/SoftClassifierTripNetv16/Erlotinib/')
+if not os.path.exists(save_results_to):
+    os.makedirs(save_results_to)
 torch.manual_seed(42)
 
 max_iter = 50
 
-GDSCE = pd.read_csv("GDSC_exprs.Erlotinib.eb_with.PDX_exprs.Erlotinib.tsv", 
+GDSCE = pd.read_csv(os.path.join(root_dir,'data/expr_homogenized/')+"GDSC_exprs.Erlotinib.eb_with.PDX_exprs.Erlotinib.tsv", 
                     sep = "\t", index_col=0, decimal = ",")
 GDSCE = pd.DataFrame.transpose(GDSCE)
 
-GDSCR = pd.read_csv("GDSC_response.Erlotinib.tsv", 
+GDSCR = pd.read_csv(os.path.join(root_dir,'data/response/')+"GDSC_response.Erlotinib.tsv", 
                     sep = "\t", index_col=0, decimal = ",")
 
-PDXE = pd.read_csv("PDX_exprs.Erlotinib.eb_with.GDSC_exprs.Erlotinib.tsv", 
+PDXE = pd.read_csv(os.path.join(root_dir,'data/expr_homogenized/')+"PDX_exprs.Erlotinib.eb_with.GDSC_exprs.Erlotinib.tsv", 
                    sep = "\t", index_col=0, decimal = ",")
 PDXE = pd.DataFrame.transpose(PDXE)
 
-PDXM = pd.read_csv("PDX_mutations.Erlotinib.tsv", 
+PDXM = pd.read_csv(os.path.join(root_dir,'data/SNA_binary/')+"PDX_mutations.Erlotinib.tsv", 
                    sep = "\t", index_col=0, decimal = ".")
 PDXM = pd.DataFrame.transpose(PDXM)
 
-PDXC = pd.read_csv("PDX_CNA.Erlotinib.tsv", 
+PDXC = pd.read_csv(os.path.join(root_dir,'data/CNA/')+"PDX_CNA.Erlotinib.tsv", 
                    sep = "\t", index_col=0, decimal = ".")
 PDXC.drop_duplicates(keep='last')
 PDXC = pd.DataFrame.transpose(PDXC)
 PDXC = PDXC.loc[:,~PDXC.columns.duplicated()]
 
-GDSCM = pd.read_csv("GDSC_mutations.Erlotinib.tsv", 
+GDSCM = pd.read_csv(os.path.join(root_dir,'data/SNA_binary/')+"GDSC_mutations.Erlotinib.tsv", 
                     sep = "\t", index_col=0, decimal = ".")
 GDSCM = pd.DataFrame.transpose(GDSCM)
 
 
-GDSCC = pd.read_csv("GDSC_CNA.Erlotinib.tsv", 
+GDSCC = pd.read_csv(os.path.join(root_dir,'data/CNA/')+"GDSC_CNA.Erlotinib.tsv", 
                     sep = "\t", index_col=0, decimal = ".")
 GDSCC.drop_duplicates(keep='last')
 GDSCC = pd.DataFrame.transpose(GDSCC)
@@ -95,7 +103,7 @@ GDSCR.loc[GDSCR.iloc[:,0] == 'S'] = 1
 GDSCR.columns = ['targets']
 GDSCR = GDSCR.loc[ls2,:]
 
-PDXR = pd.read_csv("PDX_response.Erlotinib.tsv", 
+PDXR = pd.read_csv(os.path.join(root_dir,'data/response/')+"PDX_response.Erlotinib.tsv", 
                        sep = "\t", index_col=0, decimal = ",")
 PDXR.loc[PDXR.iloc[:,0] == 'R'] = 0
 PDXR.loc[PDXR.iloc[:,0] == 'S'] = 1
@@ -139,7 +147,8 @@ for iters in range(max_iter):
         X_trainM = GDSCM.values[train_index,:]
         X_testM = GDSCM.values[test_index,:]
         X_trainC = GDSCC.values[train_index,:]
-        X_testC = GDSCM.values[test_index,:]
+        # X_testC = GDSCM.values[test_index,:]
+        X_testC = GDSCC.values[test_index,:]
         y_trainE = Y[train_index]
         y_testE = Y[test_index]
         
@@ -224,7 +233,8 @@ for iters in range(max_iter):
             def __init__(self):
                 super(AEC, self).__init__()
                 self.EnC = torch.nn.Sequential(
-                    nn.Linear(IM_dim, h_dim3),
+                    # nn.Linear(IM_dim, h_dim3),
+                    nn.Linear(IC_dim, h_dim3),
                     nn.BatchNorm1d(h_dim3),
                     nn.ReLU(),
                     nn.Dropout(rate3))
@@ -374,3 +384,5 @@ for iters in range(max_iter):
         plt.suptitle(title)
         plt.savefig(save_results_to + title + '.png', dpi = 150)
         plt.close()
+
+        print('AUC:', aucts)
