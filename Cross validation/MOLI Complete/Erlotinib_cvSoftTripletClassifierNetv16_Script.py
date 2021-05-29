@@ -14,8 +14,10 @@ import seaborn as sns
 from sklearn import metrics
 from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import train_test_split
+from sklearn.utils.multiclass import type_of_target
+from sklearn.preprocessing import LabelEncoder
 
-root_dir='/data/research/MOLI/'
+root_dir='/data/research/drug_response_ref/MOLI/'
 import os, sys
 sys.path.insert(0,root_dir)
 
@@ -36,14 +38,14 @@ torch.manual_seed(42)
 
 max_iter = 50
 
-GDSCE = pd.read_csv(os.path.join(root_dir,'data/expr_homogenized/')+"GDSC_exprs.Erlotinib.eb_with.PDX_exprs.Erlotinib.tsv", 
+GDSCE = pd.read_csv(os.path.join(root_dir,'data/exprs_homogenized/')+"GDSC_exprs.Erlotinib.eb_with.PDX_exprs.Erlotinib.tsv", 
                     sep = "\t", index_col=0, decimal = ",")
 GDSCE = pd.DataFrame.transpose(GDSCE)
 
 GDSCR = pd.read_csv(os.path.join(root_dir,'data/response/')+"GDSC_response.Erlotinib.tsv", 
                     sep = "\t", index_col=0, decimal = ",")
 
-PDXE = pd.read_csv(os.path.join(root_dir,'data/expr_homogenized/')+"PDX_exprs.Erlotinib.eb_with.GDSC_exprs.Erlotinib.tsv", 
+PDXE = pd.read_csv(os.path.join(root_dir,'data/exprs_homogenized/')+"PDX_exprs.Erlotinib.eb_with.GDSC_exprs.Erlotinib.tsv", 
                    sep = "\t", index_col=0, decimal = ",")
 PDXE = pd.DataFrame.transpose(PDXE)
 
@@ -100,6 +102,8 @@ GDSCC = GDSCC.loc[ls2,ls]
 
 GDSCR.loc[GDSCR.iloc[:,0] == 'R'] = 0
 GDSCR.loc[GDSCR.iloc[:,0] == 'S'] = 1
+GDSCR.index = GDSCR.index.astype(str)
+GDSCR = GDSCR[['response']]
 GDSCR.columns = ['targets']
 GDSCR = GDSCR.loc[ls2,:]
 
@@ -138,7 +142,12 @@ for iters in range(max_iter):
     rate3 = 0.5
     rate4 = 0.5 
     wd = random.choice(ls_wd)   
-    lam = random.choice(ls_lam)   
+    lam = random.choice(ls_lam) 
+
+    print(type_of_target(Y))
+    label_encoder = LabelEncoder()
+    Y = label_encoder.fit_transform(Y)
+    print(type_of_target(Y))  
 
     for train_index, test_index in skf.split(GDSCE.values, Y):
         k = k + 1
